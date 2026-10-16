@@ -1,0 +1,19 @@
+# Segredos e credenciais
+.env
+credentials.json
+token.json
+
+# Dados locais e estado de execução
+*.db
+*.db-wal
+*.db-shm
+*.log
+estado_alertas.json
+dashboard.html
+
+# Ambientes virtuais e caches Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
