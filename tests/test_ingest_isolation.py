@@ -1,6 +1,10 @@
 """Falha de um e-mail na ingestão não derruba os demais nem o marca como visto."""
+import json
+
 from eaa.alerting import Alerter
+from eaa.claude_client import InvalidClaudeResponse
 from eaa.db import Database
+from eaa.dedup import content_hash
 from eaa.metrics import Metrics
 from eaa.models import Email, Extraction
 from eaa.pipeline import Pipeline
@@ -68,3 +72,46 @@ def test_failed_email_is_processed_on_the_next_run(tmp_path):
     second.process_queue()
     assert sorted(notion.created) == ["m1", "m2", "m3"]
     assert db.counts() == {"done": 3}
+
+
+# --- resposta inválida da Claude (após as tentativas de formato) ---
+
+class InvalidClaude:
+    def __init__(self):
+        self.calls = 0
+
+    def analyze(self, email):
+        self.calls += 1
+        raise InvalidClaudeResponse("JSON inválido")
+
+
+def test_invalid_response_is_stored_as_failed_with_the_hash(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    claude = InvalidClaude()
+    pipeline = build(db, claude, OkNotion())
+    assert pipeline.ingest() == 0
+    assert db.counts() == {"failed": 3}
+    assert pipeline.metrics.counters["ingest_invalid_response"] == 3
+    with db.connect() as conn:
+        payload = json.loads(conn.execute(
+            "SELECT payload FROM tasks WHERE message_id='m1'").fetchone()["payload"])
+    assert payload["email"]["message_id"] == "m1" and "JSON inválido" in payload["error"]
+
+
+def test_invalid_response_email_is_not_reprocessed_nor_charged_again(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    first = InvalidClaude()
+    build(db, first, OkNotion()).ingest()
+    second = InvalidClaude()
+    pipeline = build(db, second, OkNotion())
+    assert pipeline.ingest() == 0
+    assert second.calls == 0  # nenhuma chamada à API
+    assert pipeline.metrics.counters["duplicates"] == 3
+    assert pipeline.process_queue() == 0  # failed nunca vai para a fila
+
+
+def test_other_errors_still_leave_no_hash(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    build(db, FlakyClaude(broken={"m2"}), OkNotion()).ingest()
+    assert db.counts() == {"pending": 2}
+    assert not db.has_hash(content_hash(FakeGmail().fetch_unread()[1]))

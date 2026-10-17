@@ -65,6 +65,17 @@ class Database:
                              (content_hash,))
             return cur.rowcount > 0
 
+    def enqueue_failed(self, message_id: str, payload: str, content_hash: str) -> bool:
+        """Registra o e-mail já como `failed` (sem processamento futuro), junto com o
+        hash do dedup, na mesma transação. Usado quando reprocessar não ajudaria."""
+        with self.connect() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO tasks (message_id, priority, status, payload) "
+                "VALUES (?,?,?,?)", (message_id, 0, TaskStatus.FAILED.value, payload))
+            conn.execute("INSERT OR IGNORE INTO seen_hashes (content_hash) VALUES (?)",
+                         (content_hash,))
+            return cur.rowcount > 0
+
     def next_task(self) -> Optional[Task]:
         with self.connect() as conn:
             row = conn.execute(

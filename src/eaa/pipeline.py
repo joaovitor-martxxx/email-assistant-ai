@@ -3,7 +3,7 @@ import logging
 from dataclasses import asdict
 from .alerting import Alerter
 from .calendar_client import CalendarWriter
-from .claude_client import ClaudeClient
+from .claude_client import ClaudeClient, InvalidClaudeResponse
 from .db import Database
 from .dedup import content_hash, is_new
 from .gmail_client import GmailClient
@@ -37,6 +37,14 @@ class Pipeline:
                 if self.db.enqueue(email.message_id, score, payload, content_hash(email)):
                     added += 1
                     self.metrics.incr("enqueued")
+            except InvalidClaudeResponse as exc:
+                # formato inválido persiste após as tentativas: guarda como failed COM hash,
+                # para não reprocessar nem pagar a API de novo por este e-mail
+                log.error("resposta inválida da Claude; e-mail registrado como failed",
+                          extra={"message_id": email.message_id})
+                payload = json.dumps({"email": asdict(email), "error": str(exc)})
+                self.db.enqueue_failed(email.message_id, payload, content_hash(email))
+                self.metrics.incr("ingest_invalid_response")
             except Exception:
                 # sem tarefa e sem hash: o e-mail será tentado de novo na próxima execução
                 log.exception("falha ao ingerir e-mail",

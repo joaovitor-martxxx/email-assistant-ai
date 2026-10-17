@@ -7,7 +7,7 @@ load_dotenv()
 @dataclass(frozen=True)
 class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-haiku-5-5")
     notion_token: str = os.getenv("NOTION_TOKEN", "")
     notion_database_id: str = os.getenv("NOTION_DATABASE_ID", "")
     google_credentials_file: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
