@@ -15,6 +15,8 @@ from .tracing import trace
 
 log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
+SKIP_CATEGORIES = ("promocao", "irrelevante")  # não geram tarefa no Notion nem evento
+SKIPPED_REASON = "skipped_category"
 
 class Pipeline:
     def __init__(self, db: Database, gmail: GmailClient, claude: ClaudeClient,
@@ -60,6 +62,14 @@ class Pipeline:
                     data = json.loads(task.payload)
                     email = Email(**data["email"])
                     extraction = Extraction(**data["extraction"])
+                    if extraction.category in SKIP_CATEGORIES:
+                        self.db.mark_done(task.id, reason=SKIPPED_REASON)
+                        log.info("tarefa pulada: categoria %s", extraction.category,
+                                 extra={"task_id": task.id, "message_id": task.message_id})
+                        self.alerter.record_success()
+                        self.metrics.incr("skipped")
+                        done += 1
+                        continue
                     # cada passo grava o id que criou; na retentativa, passo com id é pulado
                     if not task.notion_page_id:
                         page_id = self.notion.create_task(email, extraction, task.priority)

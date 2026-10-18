@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     payload TEXT NOT NULL,
     notion_page_id TEXT,
     calendar_event_id TEXT,
+    done_reason TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -24,7 +25,7 @@ CREATE TABLE IF NOT EXISTS seen_hashes (
 """
 
 # Colunas acrescentadas depois da primeira versão do schema (ver Database._migrate)
-ADDED_COLUMNS = ("notion_page_id", "calendar_event_id")
+ADDED_COLUMNS = ("notion_page_id", "calendar_event_id", "done_reason")
 
 
 class Database:
@@ -100,7 +101,11 @@ class Database:
             conn.execute(f"UPDATE tasks SET {column}=?, updated_at=CURRENT_TIMESTAMP "
                          "WHERE id=?", (value, task_id))
 
-    def mark_done(self, task_id: int) -> None:
+    def mark_done(self, task_id: int, reason: Optional[str] = None) -> None:
+        """Conclui a tarefa. `reason` registra por que ela terminou sem o fluxo
+        completo (ex.: skipped_category); fica NULL no caminho normal."""
+        if reason:
+            self._set_column(task_id, "done_reason", reason)
         self._set_status(task_id, TaskStatus.DONE)
 
     def mark_failed(self, task_id: int, requeue: bool) -> None:
